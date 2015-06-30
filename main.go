@@ -43,6 +43,9 @@ func main() {
 
 	var deps []*Package
 	for _, p := range start {
+		if p.Standard || strings.Contains(p.ImportPath, "/vendor/") {
+			continue
+		}
 		if *flagV {
 			fmt.Println("start", p.ImportPath)
 		}
