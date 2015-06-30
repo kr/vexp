@@ -814,9 +814,7 @@ func matchPattern(pattern string) func(name string) bool {
 		re = re[:len(re)-len(`/.*`)] + `(/.*)?`
 	}
 	reg := regexp.MustCompile(`^` + re + `$`)
-	return func(name string) bool {
-		return reg.MatchString(name)
-	}
+	return reg.MatchString
 }
 
 func copyDep(pkg *Package) {
