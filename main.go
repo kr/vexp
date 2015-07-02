@@ -832,6 +832,11 @@ func copyDep(pkg *Package) {
 		fmt.Println("copy", pkg.ImportPath)
 	}
 	dstRoot := filepath.Join("vendor", filepath.FromSlash(pkg.ImportPath))
+	err := os.RemoveAll(dstRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
 	filepath.Walk(pkg.Dir, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
