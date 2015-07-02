@@ -13,6 +13,7 @@ import (
 	"go/build"
 	"go/scanner"
 	"go/token"
+	"io"
 	"log"
 	"os"
 	pathpkg "path"
@@ -823,7 +824,6 @@ func matchPattern(pattern string) func(name string) bool {
 }
 
 func copyDep(pkg *Package) {
-	// TODO(kr): this function
 	if pkg.Error != nil {
 		fmt.Fprintln(os.Stderr, pkg.Error)
 		return
@@ -831,6 +831,52 @@ func copyDep(pkg *Package) {
 	if *flagV {
 		fmt.Println("copy", pkg.ImportPath)
 	}
+	dstRoot := filepath.Join("vendor", filepath.FromSlash(pkg.ImportPath))
+	filepath.Walk(pkg.Dir, func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return nil
+		}
+
+		// Avoid .foo, _foo, and testdata directory trees, but do not avoid "." or "..".
+		_, elem := filepath.Split(path)
+		dot := strings.HasPrefix(elem, ".") && elem != "." && elem != ".."
+		if dot || strings.HasPrefix(elem, "_") || elem == "testdata" {
+			return filepath.SkipDir
+		}
+
+		rel, _ := filepath.Rel(pkg.Dir, path)
+		fmt.Println("visit", rel)
+		dst := filepath.Join(dstRoot, rel)
+		fmt.Println("to", dst)
+		if fi.IsDir() {
+			err = os.MkdirAll(dst, 0777)
+		} else {
+			err = copyFile(dst, path)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		return nil
+	})
+}
+
+func copyFile(dst, src string) error {
+	sf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+	df, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(df, sf)
+	if err != nil {
+		df.Close()
+		return err
+	}
+	return df.Close()
 }
 
 func splitList(path string) []string {
