@@ -846,9 +846,7 @@ func copyDep(pkg *Package) {
 		}
 
 		rel, _ := filepath.Rel(pkg.Dir, path)
-		fmt.Println("visit", rel)
 		dst := filepath.Join(dstRoot, rel)
-		fmt.Println("to", dst)
 		if fi.IsDir() {
 			err = os.MkdirAll(dst, 0777)
 		} else {
