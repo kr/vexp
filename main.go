@@ -34,39 +34,52 @@ var (
 	cwd, _       = os.Getwd()
 	gobin        = os.Getenv("GOBIN")
 	buildContext = build.Default
+	// list of import paths not to search for in vendor directories
+	skipVendor []func(string) bool
 )
 
 func main() {
 	flag.Parse()
-	var updatePats []func(string) bool
-	for _, pat := range splitList(*flagU) {
-		updatePats = append(updatePats, matchPattern(pat))
-	}
-	start := packages(matchPackagesInFS("./..."), updatePats)
-	if len(start) == 0 {
+	skipVendor = flagUPats(*flagU)
+	roots := packages(matchPackagesInFS("./..."))
+	if len(roots) == 0 {
 		fmt.Fprintln(os.Stderr, "warning: ./... matched no packages")
 	}
 
-	var deps []*Package
-	for _, p := range start {
-		if p.Standard || strings.Contains(p.ImportPath, "/vendor/") {
-			continue
-		}
-		if *flagV {
-			fmt.Println("start", p.ImportPath)
-		}
-		deps = append(deps, p.deps...)
-	}
-	sort.Sort(byImportPath(deps))
-
 	var seen []string
-	for _, pkg := range deps {
-		if pkg.Standard || strings.Contains(pkg.ImportPath, "/vendor/") || isStart(pkg, start) || isSeen(pkg, seen) {
+	for _, pkg := range dependencies(roots) {
+		if isSeen(pkg, seen) {
 			continue
 		}
 		seen = append(seen, pkg.ImportPath)
 		copyDep(pkg)
 	}
+}
+
+func flagUPats(u string) (a []func(string) bool) {
+	for _, pat := range splitList(u) {
+		a = append(a, matchPattern(pat))
+	}
+	return
+}
+
+// dependencies returns the list of dependencies
+// of the given packages,
+// excluding any from cwd or the standard library.
+func dependencies(packages []*Package) (deps []*Package) {
+	for _, p := range packages {
+		if *flagV {
+			fmt.Println("root", p.ImportPath)
+		}
+		for _, d := range p.deps {
+			if d.Standard || inCWD(d.Dir) {
+				continue
+			}
+			deps = append(deps, d)
+		}
+	}
+	sort.Sort(byImportPath(deps))
+	return deps
 }
 
 func isSeen(pkg *Package, seen []string) bool {
@@ -136,16 +149,14 @@ func (p *Package) copyBuild(pp *build.Package) {
 // command line arguments 'args'.  If there is an error
 // loading the package (for example, if the directory does not exist),
 // then packages returns a *Package for that argument with p.Error != nil.
-// noVendor is a list of package patterns; any import path
-// that matches one of these will not search vendor directories.
-func packages(args []string, noVendor []func(string) bool) []*Package {
+func packages(args []string) []*Package {
 	var pkgs []*Package
 	var stk importStack
 	var set = make(map[string]bool)
 
 	for _, arg := range args {
 		if !set[arg] {
-			pkgs = append(pkgs, loadPackage(arg, &stk, noVendor))
+			pkgs = append(pkgs, loadPackage(arg, &stk))
 			set[arg] = true
 		}
 	}
@@ -157,7 +168,7 @@ func packages(args []string, noVendor []func(string) bool) []*Package {
 // not for paths found in import statements.  In addition to ordinary import paths,
 // loadPackage accepts pseudo-paths beginning with cmd/ to denote commands
 // in the Go command directory, as well as paths to those directories.
-func loadPackage(arg string, stk *importStack, noVendor []func(string) bool) *Package {
+func loadPackage(arg string, stk *importStack) *Package {
 	// If it is a local import path but names a standard package,
 	// we treat it as if the user specified the standard package.
 	// This lets you run go test ./ioutil in package io and be
@@ -169,7 +180,7 @@ func loadPackage(arg string, stk *importStack, noVendor []func(string) bool) *Pa
 			arg = bp.ImportPath
 		}
 	}
-	return loadImport(arg, cwd, noVendor, nil, stk, nil)
+	return loadImport(arg, cwd, nil, stk, nil)
 }
 
 // packageCache is a lookup cache for loadPackage,
@@ -181,7 +192,7 @@ var packageCache = map[string]*Package{}
 // but possibly a local import path (an absolute file system path or one beginning
 // with ./ or ../).  A local relative path is interpreted relative to srcDir.
 // It returns a *Package describing the package found in that directory.
-func loadImport(path, srcDir string, noVendor []func(string) bool, parent *Package, stk *importStack, importPos []token.Position) *Package {
+func loadImport(path, srcDir string, parent *Package, stk *importStack, importPos []token.Position) *Package {
 	stk.push(path)
 	defer stk.pop()
 
@@ -197,7 +208,7 @@ func loadImport(path, srcDir string, noVendor []func(string) bool, parent *Packa
 	if isLocal {
 		importPath = dirToImportPath(filepath.Join(srcDir, path))
 	} else {
-		path, vendorSearch = vendoredImportPath(parent, path, noVendor)
+		path, vendorSearch = vendoredImportPath(parent, path)
 		importPath = path
 	}
 
@@ -251,7 +262,7 @@ func loadImport(path, srcDir string, noVendor []func(string) bool, parent *Packa
 	if err == nil && !isLocal && bp.ImportComment != "" && bp.ImportComment != path && !strings.Contains(path, "/vendor/") {
 		err = fmt.Errorf("code in directory %s expects import %q", bp.Dir, bp.ImportComment)
 	}
-	p.load(stk, noVendor, bp, err)
+	p.load(stk, bp, err)
 	if p.Error != nil && len(importPos) > 0 {
 		pos := importPos[0]
 		pos.Filename = shortPath(pos.Filename)
@@ -279,7 +290,7 @@ var cgoSyscallExclude = map[string]bool{
 
 // load populates p using information from bp, err, which should
 // be the result of calling build.Context.Import.
-func (p *Package) load(stk *importStack, noVendor []func(string) bool, bp *build.Package, err error) *Package {
+func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package {
 	p.copyBuild(bp)
 
 	// The localPrefix is the path we interpret ./ imports relative to.
@@ -366,7 +377,7 @@ func (p *Package) load(stk *importStack, noVendor []func(string) bool, bp *build
 		if path == "C" {
 			continue
 		}
-		p1 := loadImport(path, p.Dir, noVendor, p, stk, p.Package.ImportPos[path])
+		p1 := loadImport(path, p.Dir, p, stk, p.Package.ImportPos[path])
 		if p1.Name == "main" {
 			p.Error = &PackageError{
 				ImportStack: stk.copy(),
@@ -479,12 +490,12 @@ func isDir(path string) bool {
 // If no epxansion is found, vendoredImportPath also returns a list of vendor directories
 // it searched along the way, to help prepare a useful error message should path turn
 // out not to exist.
-// skipPat is a list of package patterns to skip.
-func vendoredImportPath(parent *Package, path string, skipPat []func(string) bool) (found string, searched []string) {
+// It skips paths that match the patterns in skipVendor.
+func vendoredImportPath(parent *Package, path string) (found string, searched []string) {
 	if parent == nil {
 		return path, nil
 	}
-	for _, match := range skipPat {
+	for _, match := range skipVendor {
 		if match(path) {
 			return path, nil
 		}
@@ -558,13 +569,9 @@ func (p *PackageError) Error() string {
 	return "package " + strings.Join(p.ImportStack, "\n\timports ") + ": " + p.Err
 }
 
-func isStart(pkg *Package, startSet []*Package) bool {
-	for _, start := range startSet {
-		if start.ImportPath == pkg.ImportPath {
-			return true
-		}
-	}
-	return false
+// assumes path and cwd are clean
+func inCWD(path string) bool {
+	return path == cwd || strings.HasPrefix(path, cwd+string(os.PathSeparator))
 }
 
 func matchPackagesInFS(pattern string) []string {
