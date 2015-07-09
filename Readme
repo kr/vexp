@@ -22,13 +22,3 @@ copied from $GOPATH into the vendor directory, even if
 already present.
 
 For more about specifying packages, see 'go help packages'.
-
-To try this tool on a project that uses godep save -r,
-first save the project without -r (to undo rewriting of the
-import paths), then run this tool as you normally would:
-
-	cd my/project
-	GOPATH=/tmp/move godep restore
-	GOPATH=/tmp/move godep save ./... # no -r
-	vexp -v
-
