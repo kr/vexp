@@ -6,7 +6,7 @@ Usage:
 
 Vexp finds all dependencies of all packages in ./...,
 and copies their files into subdirectory "vendor", such
-that the go tool will use the copied packges when run
+that the go tool will use the copied packages when run
 with GO15VENDOREXPERIMENT=1 in its environment.
 
 For more details on the Go 1.5 vendor experiment, see
