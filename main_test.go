@@ -42,9 +42,9 @@ func TestFindDeps(t *testing.T) {
 			root: "p",
 			want: "d q",
 			tab: `
-				p/p.go:          package p; import _ "q"
-				q/q.go:          package p; import _ "d"
-				d/d.go:          package d
+				p/p.go: package p; import _ "q"
+				q/q.go: package p; import _ "d"
+				d/d.go: package d
 			`,
 		},
 		{
@@ -55,6 +55,22 @@ func TestFindDeps(t *testing.T) {
 				q/q.go:          package p; import _ "d"
 				q/vendor/d/d.go: package d
 				d/d.go:          package d
+			`,
+		},
+		{
+			root: "p",
+			want: "d", // d has Error set
+			tab: `
+				p/p.go: package p; import _ "d"
+			`,
+		},
+		{
+			root: "p",
+			want: "d q", // d has Error set
+			tab: `
+				p/p.go:          package p; import _ "q"
+				q/q.go:          package p; import _ "d"
+				q/vendor/d/d.go: package d
 			`,
 		},
 	}

@@ -45,9 +45,21 @@ func main() {
 	if len(roots) == 0 {
 		fmt.Fprintln(os.Stderr, "warning: ./... matched no packages")
 	}
+	deps := dependencies(roots)
+	ok := true
+	for _, pkg := range deps {
+		if pkg.Error != nil {
+			fmt.Fprintln(os.Stderr, pkg.Error)
+			ok = false
+		}
+	}
+	if !ok {
+		fmt.Fprintln(os.Stderr, "error(s) loading dependencies")
+		os.Exit(1)
+	}
 
 	var seen []string
-	for _, pkg := range dependencies(roots) {
+	for _, pkg := range deps {
 		if isSeen(pkg, seen) {
 			continue
 		}
@@ -836,10 +848,6 @@ func matchPattern(pattern string) func(name string) bool {
 }
 
 func copyDep(pkg *Package) {
-	if pkg.Error != nil {
-		fmt.Fprintln(os.Stderr, pkg.Error)
-		return
-	}
 	if *flagV {
 		fmt.Println("copy", pkg.ImportPath)
 	}
