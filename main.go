@@ -506,6 +506,11 @@ func vendoredImportPath(parent *Package, path string) (found string, searched []
 		log.Printf("invalid vendoredImportPath: dir=%q root=%q separator=%q", dir, root, string(filepath.Separator))
 		os.Exit(1)
 	}
+	if !inCWD(dir) {
+		// We consider vendored packages only for the root set
+		// we're trying to operate on, not its dependencies.
+		return path, nil
+	}
 	vpath := "vendor/" + path
 	for i := len(dir); i >= len(root); i-- {
 		if i < len(dir) && dir[i] != filepath.Separator {

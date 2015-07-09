@@ -38,6 +38,25 @@ func TestFindDeps(t *testing.T) {
 				d/d.go:          package d
 			`,
 		},
+		{
+			root: "p",
+			want: "d q",
+			tab: `
+				p/p.go:          package p; import _ "q"
+				q/q.go:          package p; import _ "d"
+				d/d.go:          package d
+			`,
+		},
+		{
+			root: "p",
+			want: "d q",
+			tab: `
+				p/p.go:          package p; import _ "q"
+				q/q.go:          package p; import _ "d"
+				q/vendor/d/d.go: package d
+				d/d.go:          package d
+			`,
+		},
 	}
 
 	for _, test := range findDeps {
