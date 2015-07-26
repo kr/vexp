@@ -857,7 +857,13 @@ func copyDep(pkg *Package) {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
+	if *flagV {
+		fmt.Println("walk", pkg.Dir)
+	}
 	filepath.Walk(pkg.Dir, func(path string, fi os.FileInfo, err error) error {
+		if *flagV {
+			fmt.Fprintln(os.Stderr, "path", path)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return nil
@@ -867,6 +873,9 @@ func copyDep(pkg *Package) {
 		_, elem := filepath.Split(path)
 		dot := strings.HasPrefix(elem, ".") && elem != "." && elem != ".."
 		if dot || strings.HasPrefix(elem, "_") || elem == "testdata" {
+			if *flagV {
+				fmt.Fprintln(os.Stderr, "skipping", path)
+			}
 			return filepath.SkipDir
 		}
 
@@ -885,6 +894,9 @@ func copyDep(pkg *Package) {
 }
 
 func copyFile(dst, src string) error {
+	if *flagV {
+		fmt.Fprintln(os.Stderr, "copying", dst, src)
+	}
 	sf, err := os.Open(src)
 	if err != nil {
 		return err
