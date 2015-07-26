@@ -867,7 +867,10 @@ func copyDep(pkg *Package) {
 		_, elem := filepath.Split(path)
 		dot := strings.HasPrefix(elem, ".") && elem != "." && elem != ".."
 		if dot || strings.HasPrefix(elem, "_") || elem == "testdata" {
-			return filepath.SkipDir
+			if fi.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		rel, _ := filepath.Rel(pkg.Dir, path)
