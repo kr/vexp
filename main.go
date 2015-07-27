@@ -340,6 +340,9 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 		}
 	}
 
+	importPaths = append(importPaths, p.TestImports...)
+	importPaths = append(importPaths, p.XTestImports...)
+
 	// Build list of full paths to all Go files in the package,
 	// for use by commands like go fmt.
 	p.gofiles = stringList(p.GoFiles, p.CgoFiles, p.TestGoFiles, p.XTestGoFiles)

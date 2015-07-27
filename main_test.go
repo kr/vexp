@@ -73,6 +73,21 @@ func TestFindDeps(t *testing.T) {
 				q/vendor/d/d.go: package d
 			`,
 		},
+		{
+			// copy test dependencies
+			root: "p",
+			want: "pt q qt xt",
+			tab: `
+				p/p.go:      package p;      import _ "q"
+				p/p_test.go: package p;      import _ "pt"
+				p/x_test.go: package p_test; import _ "xt"
+				q/q.go:      package q
+				q/q_test.go: package q;      import _ "qt"
+				pt/pt.go:    package pt
+				xt/xt.go:    package xt
+				qt/qt.go:    package qt
+			`,
+		},
 	}
 
 	for _, test := range findDeps {
