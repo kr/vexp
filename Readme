@@ -11,6 +11,8 @@ with GO15VENDOREXPERIMENT=1 in its environment.
 
 For more details on the Go 1.5 vendor experiment, see
 https://groups.google.com/d/msg/golang-dev/74zjMON9glU/4lWCRDCRZg0J
+and the description of the change introducing the feature,
+https://go.googlesource.com/go/+/183cc0cd41
 
 With no options, vexp only adds new packages; existing
 packages are left unchanged.
