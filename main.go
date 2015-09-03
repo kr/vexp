@@ -26,9 +26,15 @@ import (
 )
 
 var (
-	flagU = flag.String("u", "", "update package, colon-separated pattern list")
-	flagV = flag.Bool("v", false, "verbose")
+	update  = flag.String("u", "", "update `packages` (colon-separated list of patterns)")
+	verbose = flag.Bool("v", false, "verbose")
 )
+
+func usage() {
+	fmt.Fprintln(os.Stderr, "Usage: vexp [-v] [-u packages]")
+	flag.PrintDefaults()
+	os.Exit(2)
+}
 
 var (
 	cwd, _       = os.Getwd()
@@ -39,8 +45,9 @@ var (
 )
 
 func main() {
+	flag.Usage = usage
 	flag.Parse()
-	skipVendor = flagUPats(*flagU)
+	skipVendor = flagUPats(*update)
 	roots := packages(matchPackagesInFS("./..."))
 	if len(roots) == 0 {
 		fmt.Fprintln(os.Stderr, "warning: ./... matched no packages")
@@ -80,7 +87,7 @@ func flagUPats(u string) (a []func(string) bool) {
 // excluding any from cwd or the standard library.
 func dependencies(packages []*Package) (deps []*Package) {
 	for _, p := range packages {
-		if *flagV {
+		if *verbose {
 			fmt.Println("root", p.ImportPath)
 		}
 		for _, d := range p.deps {
@@ -851,7 +858,7 @@ func matchPattern(pattern string) func(name string) bool {
 }
 
 func copyDep(pkg *Package) {
-	if *flagV {
+	if *verbose {
 		fmt.Println("copy", pkg.ImportPath)
 	}
 	dstRoot := filepath.Join("vendor", filepath.FromSlash(pkg.ImportPath))
