@@ -39,7 +39,7 @@ func usage() {
 var (
 	cwd, _       = os.Getwd()
 	gobin        = os.Getenv("GOBIN")
-	buildContext = build.Default
+	buildContext = defaultBuildContext()
 	// list of import paths not to search for in vendor directories
 	skipVendor []func(string) bool
 )
@@ -1045,4 +1045,10 @@ func foldDup(list []string) (string, string) {
 		clash[fold] = s
 	}
 	return "", ""
+}
+
+func defaultBuildContext() build.Context {
+	c := build.Default
+	c.UseAllFiles = true
+	return c
 }

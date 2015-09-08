@@ -88,6 +88,16 @@ func TestFindDeps(t *testing.T) {
 				qt/qt.go:    package qt
 			`,
 		},
+		{
+			root: "p",
+			want: "d e",
+			tab: `
+				p/p_darwin.go: package p; import _ "d"
+				p/p_linux.go:  package p; import _ "e"
+				d/d.go: package d
+				e/e.go: package e
+			`,
+		},
 	}
 
 	for _, test := range findDeps {
