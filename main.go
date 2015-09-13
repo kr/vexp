@@ -336,16 +336,6 @@ func loadDeps(p *Package, stk *importStack, err error) {
 			return
 		}
 		p1 := loadImport(path, p.Dir, p, stk, p.Package.ImportPos[path])
-		if p1.Name == "main" {
-			p.Error = &PackageError{
-				ImportStack: stk.copy(),
-				Err:         fmt.Sprintf("import %q is a program, not an importable package", path),
-			}
-			pos := p.Package.ImportPos[path]
-			if len(pos) > 0 {
-				p.Error.Pos = pos[0].String()
-			}
-		}
 		path = p1.ImportPath
 		if i < len(p.Imports) {
 			p.Imports[i] = path
