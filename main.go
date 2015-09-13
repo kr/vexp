@@ -272,7 +272,8 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 	if err == nil && bp.ImportComment != "" && bp.ImportComment != path && !strings.Contains(path, "/vendor/") {
 		err = fmt.Errorf("code in directory %s expects import %q", bp.Dir, bp.ImportComment)
 	}
-	p.load(stk, bp, err)
+	p.copyBuild(bp)
+	loadDeps(p, stk, err)
 	if p.Error != nil && len(importPos) > 0 {
 		pos := importPos[0]
 		pos.Filename = shortPath(pos.Filename)
@@ -298,18 +299,15 @@ var cgoSyscallExclude = map[string]bool{
 	"runtime/race": true,
 }
 
-// load populates p using information from bp, err, which should
-// be the result of calling build.Context.Import.
-func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package {
-	p.copyBuild(bp)
-
+// loadDeps loads p's deps
+func loadDeps(p *Package, stk *importStack, err error) {
 	if err != nil {
 		p.Incomplete = true
 		p.Error = &PackageError{
 			ImportStack: stk.copy(),
 			Err:         err.Error(),
 		}
-		return p
+		return
 	}
 
 	importPaths := p.Imports
@@ -375,7 +373,7 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 			ImportStack: stk.copy(),
 			Err:         fmt.Sprintf("case-insensitive file name collision: %q and %q", f1, f2),
 		}
-		return p
+		return
 	}
 
 	// Build list of imported packages and full dependency list.
@@ -394,7 +392,7 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 			if len(pos) > 0 {
 				p.Error.Pos = pos[0].String()
 			}
-			return p
+			return
 		}
 		p1 := loadImport(path, p.Dir, p, stk, p.Package.ImportPos[path])
 		if p1.Name == "main" {
@@ -449,11 +447,9 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 				ImportStack: stk.copy(),
 				Err:         fmt.Sprintf("case-insensitive import collision: %q and %q", dep1, dep2),
 			}
-			return p
+			return
 		}
 	}
-
-	return p
 }
 
 var isDirCache = map[string]bool{}
