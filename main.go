@@ -285,10 +285,6 @@ func loadDeps(p *Package, stk *importStack, err error) {
 		return
 	}
 
-	importPaths := p.Imports
-	importPaths = append(importPaths, p.TestImports...)
-	importPaths = append(importPaths, p.XTestImports...)
-
 	// Check for case-insensitive collision of input files.
 	// To avoid problems on case-insensitive files, we reject any package
 	// where two different input files have equal names under a case-insensitive
@@ -318,7 +314,7 @@ func loadDeps(p *Package, stk *importStack, err error) {
 
 	// Build list of imported packages and full dependency list.
 	deps := make(map[string]*Package)
-	for i, path := range importPaths {
+	for i, path := range stringList(p.Imports, p.TestImports, p.XTestImports) {
 		if path == "C" {
 			continue
 		}
