@@ -360,26 +360,21 @@ func loadDeps(p *Package, stk *importStack, err error) {
 	}
 	p.loadedDeps = true
 
-	var depErrors []error
+	depErrors := false
 	depPaths := make([]string, 0, len(deps))
-	for dep := range deps {
-		depPaths = append(depPaths, dep)
-	}
-	sort.Strings(depPaths)
-	for _, dep := range depPaths {
-		p1 := deps[dep]
-		if p1 == nil {
-			panic("impossible: missing entry in package cache for " + dep + " imported by " + p.ImportPath)
-		}
+	for path, p1 := range deps {
+		depPaths = append(depPaths, path)
 		p.deps = append(p.deps, p1)
 		if p1.Error != nil {
-			depErrors = append(depErrors, p1.Error)
+			depErrors = true
 		}
 	}
+	sort.Strings(depPaths)
+	sort.Sort(byImportPath(p.deps))
 
 	// In the absence of errors lower in the dependency tree,
 	// check for case-insensitive collisions of import paths.
-	if len(depErrors) == 0 {
+	if !depErrors {
 		dep1, dep2 := foldDup(depPaths)
 		if dep1 != "" {
 			p.Error = &PackageError{
