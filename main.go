@@ -58,6 +58,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, pkg.Error)
 			ok = false
 		}
+		if pkg.Standard {
+			fmt.Fprintf(os.Stderr, "package %s is in the standard library\n", pkg.ImportPath)
+			ok = false
+		}
 	}
 	if !ok {
 		fmt.Fprintln(os.Stderr, "error(s) loading dependencies")
@@ -90,7 +94,7 @@ func dependencies(packages []*Package) (deps []*Package) {
 			fmt.Println("root", p.ImportPath)
 		}
 		for _, d := range p.deps {
-			if d.Standard || inCWD(d.Dir) {
+			if inCWD(d.Dir) {
 				continue
 			}
 			deps = append(deps, d)
@@ -267,6 +271,9 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 		err = fmt.Errorf("code in directory %s expects import %q", bp.Dir, bp.ImportComment)
 	}
 	p.copyBuild(bp)
+	if p.Standard {
+		return p
+	}
 	loadDeps(p, stk, err)
 	if p.Error != nil && len(importPos) > 0 {
 		pos := importPos[0]
@@ -285,7 +292,7 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 }
 
 // loadDeps loads p's deps
-// it can omit standard library deps
+// it omits the standard library
 func loadDeps(p *Package, stk *importStack, err error) {
 	if err != nil {
 		p.Error = &PackageError{
@@ -357,6 +364,9 @@ func loadDeps(p *Package, stk *importStack, err error) {
 		path = p1.ImportPath
 		if i < len(p.Imports) {
 			p.Imports[i] = path
+		}
+		if p1.Standard {
+			continue
 		}
 		deps[path] = p1
 		for _, dep := range p1.deps {
