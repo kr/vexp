@@ -144,11 +144,11 @@ func (sp *importStack) shorterThan(t []string) bool {
 // A Package describes a single package found in a directory.
 type Package struct {
 	*build.Package
-	Standard bool `json:",omitempty"` // is this package part of the standard Go library?
+	Standard bool // is this package part of the standard Go library?
 
 	// Error information
-	Incomplete bool          `json:",omitempty"` // was there an error loading this package or dependencies?
-	Error      *PackageError `json:",omitempty"` // error loading this package (not dependencies)
+	Incomplete bool          // was there an error loading this package or dependencies?
+	Error      *PackageError // error loading this package (not dependencies)
 
 	imports    []*Package
 	deps       []*Package
