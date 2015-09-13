@@ -151,12 +151,10 @@ type Package struct {
 	Incomplete bool          `json:",omitempty"` // was there an error loading this package or dependencies?
 	Error      *PackageError `json:",omitempty"` // error loading this package (not dependencies)
 
-	imports     []*Package
-	deps        []*Package
-	gofiles     []string // GoFiles+CgoFiles+TestGoFiles+XTestGoFiles files, absolute paths
-	allgofiles  []string // gofiles + IgnoredGoFiles, absolute paths
-	local       bool     // imported via local path (./ or ../)
-	localPrefix string   // interpret ./ and ../ imports relative to this prefix
+	imports    []*Package
+	deps       []*Package
+	gofiles    []string // GoFiles+CgoFiles+TestGoFiles+XTestGoFiles files, absolute paths
+	allgofiles []string // gofiles + IgnoredGoFiles, absolute paths
 }
 
 func (p *Package) copyBuild(pp *build.Package) {
@@ -222,14 +220,9 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 	// For vendored imports, it is the expanded form.
 	importPath := path
 	origPath := path
-	isLocal := build.IsLocalImport(path)
 	var vendorSearch []string
-	if isLocal {
-		importPath = dirToImportPath(filepath.Join(srcDir, path))
-	} else {
-		path, vendorSearch = vendoredImportPath(parent, path)
-		importPath = path
-	}
+	path, vendorSearch = vendoredImportPath(parent, path)
+	importPath = path
 
 	if p := packageCache[importPath]; p != nil {
 		if perr := disallowInternal(srcDir, p, stk); perr != p {
@@ -242,7 +235,6 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 	}
 
 	p := new(Package)
-	p.local = isLocal
 	packageCache[importPath] = p
 
 	// Load package.
@@ -278,7 +270,7 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 	if gobin != "" {
 		bp.BinDir = gobin
 	}
-	if err == nil && !isLocal && bp.ImportComment != "" && bp.ImportComment != path && !strings.Contains(path, "/vendor/") {
+	if err == nil && bp.ImportComment != "" && bp.ImportComment != path && !strings.Contains(path, "/vendor/") {
 		err = fmt.Errorf("code in directory %s expects import %q", bp.Dir, bp.ImportComment)
 	}
 	p.load(stk, bp, err)
@@ -311,10 +303,6 @@ var cgoSyscallExclude = map[string]bool{
 // be the result of calling build.Context.Import.
 func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package {
 	p.copyBuild(bp)
-
-	// The localPrefix is the path we interpret ./ imports relative to.
-	// Synthesized main packages sometimes override this.
-	p.localPrefix = dirToImportPath(p.Dir)
 
 	if err != nil {
 		p.Incomplete = true
@@ -399,6 +387,17 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 		if path == "C" {
 			continue
 		}
+		if build.IsLocalImport(path) {
+			p.Error = &PackageError{
+				ImportStack: stk.copy(),
+				Err:         fmt.Sprintf("local import %q in non-local package", path),
+			}
+			pos := p.Package.ImportPos[path]
+			if len(pos) > 0 {
+				p.Error.Pos = pos[0].String()
+			}
+			return p
+		}
 		p1 := loadImport(path, p.Dir, p, stk, p.Package.ImportPos[path])
 		if p1.Name == "main" {
 			p.Error = &PackageError{
@@ -408,18 +407,6 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 			pos := p.Package.ImportPos[path]
 			if len(pos) > 0 {
 				p.Error.Pos = pos[0].String()
-			}
-		}
-		if p1.local {
-			if !p.local && p.Error == nil {
-				p.Error = &PackageError{
-					ImportStack: stk.copy(),
-					Err:         fmt.Sprintf("local import %q in non-local package", path),
-				}
-				pos := p.Package.ImportPos[path]
-				if len(pos) > 0 {
-					p.Error.Pos = pos[0].String()
-				}
 			}
 		}
 		path = p1.ImportPath
@@ -469,26 +456,6 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 	}
 
 	return p
-}
-
-// dirToImportPath returns the pseudo-import path we use for a package
-// outside the Go path.  It begins with _/ and then contains the full path
-// to the directory.  If the package lives in c:\home\gopher\my\pkg then
-// the pseudo-import path is _/c_/home/gopher/my/pkg.
-// Using a pseudo-import path like this makes the ./ imports no longer
-// a special case, so that all the code to deal with ordinary imports works
-// automatically.
-func dirToImportPath(dir string) string {
-	return pathpkg.Join("_", strings.Map(makeImportValid, filepath.ToSlash(dir)))
-}
-
-func makeImportValid(r rune) rune {
-	// Should match Go spec, compilers, and ../../go/parser/parser.go:/isValidImport.
-	const illegalChars = `!"#$%&'()*,:;<=>?[\]^{|}` + "`\uFFFD"
-	if !unicode.IsGraphic(r) || unicode.IsSpace(r) || strings.ContainsRune(illegalChars, r) {
-		return '_'
-	}
-	return r
 }
 
 var isDirCache = map[string]bool{}
