@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"go/build"
-	"go/scanner"
 	"go/token"
 	"io"
 	"log"
@@ -306,7 +305,6 @@ func (p *Package) load(stk *importStack, bp *build.Package, err error) *Package 
 
 	if err != nil {
 		p.Incomplete = true
-		err = expandScanner(err)
 		p.Error = &PackageError{
 			ImportStack: stk.copy(),
 			Err:         err.Error(),
@@ -894,27 +892,6 @@ type byImportPath []*Package
 func (a byImportPath) Len() int           { return len(a) }
 func (a byImportPath) Less(i, j int) bool { return a[i].ImportPath < a[j].ImportPath }
 func (a byImportPath) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-// expandScanner expands a scanner.List error into all the errors in the list.
-// The default Error method only shows the first error.
-func expandScanner(err error) error {
-	// Look for parser errors.
-	if err, ok := err.(scanner.ErrorList); ok {
-		// Prepare error with \n before each message.
-		// When printed in something like context: %v
-		// this will put the leading file positions each on
-		// its own line.  It will also show all the errors
-		// instead of just the first, as err.Error does.
-		var buf bytes.Buffer
-		for _, e := range err {
-			e.Pos.Filename = shortPath(e.Pos.Filename)
-			buf.WriteString("\n")
-			buf.WriteString(e.Error())
-		}
-		return errors.New(buf.String())
-	}
-	return err
-}
 
 // hasPathPrefix reports whether the path s begins with the
 // elements in prefix.
