@@ -144,16 +144,10 @@ func (sp *importStack) shorterThan(t []string) bool {
 // A Package describes a single package found in a directory.
 type Package struct {
 	*build.Package
-	Standard bool // is this package part of the standard Go library?
-
-	// Error information
-	Incomplete bool          // was there an error loading this package or dependencies?
+	Standard   bool          // is this package part of the standard Go library?
 	Error      *PackageError // error loading this package (not dependencies)
-
-	imports    []*Package
+	loadedDeps bool
 	deps       []*Package
-	gofiles    []string // GoFiles+CgoFiles+TestGoFiles+XTestGoFiles files, absolute paths
-	allgofiles []string // gofiles + IgnoredGoFiles, absolute paths
 }
 
 func (p *Package) copyBuild(pp *build.Package) {
@@ -290,19 +284,10 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 	return p
 }
 
-var cgoExclude = map[string]bool{
-	"runtime/cgo": true,
-}
-
-var cgoSyscallExclude = map[string]bool{
-	"runtime/cgo":  true,
-	"runtime/race": true,
-}
-
 // loadDeps loads p's deps
+// it can omit standard library deps
 func loadDeps(p *Package, stk *importStack, err error) {
 	if err != nil {
-		p.Incomplete = true
 		p.Error = &PackageError{
 			ImportStack: stk.copy(),
 			Err:         err.Error(),
@@ -311,43 +296,8 @@ func loadDeps(p *Package, stk *importStack, err error) {
 	}
 
 	importPaths := p.Imports
-	// Packages that use cgo import runtime/cgo implicitly.
-	// Packages that use cgo also import syscall implicitly,
-	// to wrap errno.
-	// Exclude certain packages to avoid circular dependencies.
-	if len(p.CgoFiles) > 0 && (!p.Standard || !cgoExclude[p.ImportPath]) {
-		importPaths = append(importPaths, "runtime/cgo")
-	}
-	if len(p.CgoFiles) > 0 && (!p.Standard || !cgoSyscallExclude[p.ImportPath]) {
-		importPaths = append(importPaths, "syscall")
-	}
-
-	// Everything depends on runtime, except runtime and unsafe.
-	if !p.Standard || (p.ImportPath != "runtime" && p.ImportPath != "unsafe") {
-		importPaths = append(importPaths, "runtime")
-		// On ARM with GOARM=5, everything depends on math for the link.
-		if p.ImportPath == "main" && buildContext.GOARCH == "arm" {
-			importPaths = append(importPaths, "math")
-		}
-	}
-
 	importPaths = append(importPaths, p.TestImports...)
 	importPaths = append(importPaths, p.XTestImports...)
-
-	// Build list of full paths to all Go files in the package,
-	// for use by commands like go fmt.
-	p.gofiles = stringList(p.GoFiles, p.CgoFiles, p.TestGoFiles, p.XTestGoFiles)
-	for i := range p.gofiles {
-		p.gofiles[i] = filepath.Join(p.Dir, p.gofiles[i])
-	}
-	sort.Strings(p.gofiles)
-
-	p.allgofiles = stringList(p.IgnoredGoFiles)
-	for i := range p.allgofiles {
-		p.allgofiles[i] = filepath.Join(p.Dir, p.allgofiles[i])
-	}
-	p.allgofiles = append(p.allgofiles, p.gofiles...)
-	sort.Strings(p.allgofiles)
 
 	// Check for case-insensitive collision of input files.
 	// To avoid problems on case-insensitive files, we reject any package
@@ -377,7 +327,6 @@ func loadDeps(p *Package, stk *importStack, err error) {
 	}
 
 	// Build list of imported packages and full dependency list.
-	imports := make([]*Package, 0, len(p.Imports))
 	deps := make(map[string]*Package)
 	for i, path := range importPaths {
 		if path == "C" {
@@ -406,20 +355,15 @@ func loadDeps(p *Package, stk *importStack, err error) {
 			}
 		}
 		path = p1.ImportPath
-		importPaths[i] = path
 		if i < len(p.Imports) {
 			p.Imports[i] = path
 		}
 		deps[path] = p1
-		imports = append(imports, p1)
 		for _, dep := range p1.deps {
 			deps[dep.ImportPath] = dep
 		}
-		if p1.Incomplete {
-			p.Incomplete = true
-		}
 	}
-	p.imports = imports
+	p.loadedDeps = true
 
 	var depErrors []error
 	depPaths := make([]string, 0, len(deps))
@@ -664,7 +608,6 @@ func disallowInternal(srcDir string, p *Package, stk *importStack) *Package {
 		ImportStack: stk.copy(),
 		Err:         "use of internal package not allowed",
 	}
-	perr.Incomplete = true
 	return &perr
 }
 
@@ -710,7 +653,6 @@ func disallowVendor(srcDir, path string, p *Package, stk *importStack) *Package 
 			ImportStack: stk.copy(),
 			Err:         "must be imported as " + path[i+len("vendor/"):],
 		}
-		perr.Incomplete = true
 		return &perr
 	}
 
@@ -753,7 +695,6 @@ func disallowVendorVisibility(srcDir string, p *Package, stk *importStack) *Pack
 		ImportStack: stk.copy(),
 		Err:         "use of vendored package not allowed",
 	}
-	perr.Incomplete = true
 	return &perr
 }
 
@@ -782,10 +723,8 @@ func findVendor(path string) (index int, ok bool) {
 // of the import stack stk.  If this use causes an import loop,
 // reusePackage updates p's error information to record the loop.
 func reusePackage(p *Package, stk *importStack) *Package {
-	// We use p.imports==nil to detect a package that
-	// is in the midst of its own loadPackage call
-	// (all the recursion below happens before p.imports gets set).
-	if p.imports == nil {
+	// (all the recursion below happens before p.loadedDeps gets set).
+	if p.loadedDeps {
 		if p.Error == nil {
 			p.Error = &PackageError{
 				ImportStack:   stk.copy(),
@@ -793,7 +732,6 @@ func reusePackage(p *Package, stk *importStack) *Package {
 				isImportCycle: true,
 			}
 		}
-		p.Incomplete = true
 	}
 	// Don't rewrite the import stack in the error if we have an import cycle.
 	// If we do, we'll lose the path that describes the cycle.
