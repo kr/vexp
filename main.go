@@ -54,7 +54,7 @@ func main() {
 	}
 	deps := dependencies(roots)
 	ok := true
-	for _, pkg := range deps {
+	for _, pkg := range append(roots, deps...) {
 		if pkg.Error != nil {
 			fmt.Fprintln(os.Stderr, pkg.Error)
 			ok = false

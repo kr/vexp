@@ -10,7 +10,10 @@ import (
 )
 
 func TestFindDeps(t *testing.T) {
-	findDeps := []struct{ root, update, want, tab string }{
+	findDeps := []struct {
+		root, update, want, tab string
+		wantErr                 bool
+	}{
 		{
 			root: "p",
 			want: "d",
@@ -63,6 +66,7 @@ func TestFindDeps(t *testing.T) {
 			tab: `
 				p/p.go: package p; import _ "d"
 			`,
+			wantErr: true,
 		},
 		{
 			root: "p",
@@ -72,6 +76,7 @@ func TestFindDeps(t *testing.T) {
 				q/q.go:          package q; import _ "d"
 				q/vendor/d/d.go: package d
 			`,
+			wantErr: true,
 		},
 		{
 			// copy test dependencies
@@ -98,6 +103,15 @@ func TestFindDeps(t *testing.T) {
 				e/e.go: package e
 			`,
 		},
+		{
+			root: "p",
+			want: "",
+			tab: `
+				p/p.go:   package p; import _ "./d"
+				p/d/d.go: package d
+			`,
+			wantErr: true,
+		},
 	}
 
 	for _, test := range findDeps {
@@ -105,7 +119,14 @@ func TestFindDeps(t *testing.T) {
 		clean := setup(t, paths[0], test.tab)
 		defer clean()
 		skipVendor = flagUPats(test.update)
-		got := names(dependencies(packages(paths)))
+		pkgs := packages(paths)
+		deps := dependencies(pkgs)
+		if got := anyErr(append(pkgs, deps...)); got != test.wantErr {
+			t.Errorf("dependencies(packages(%q)) error = %v want %v", test.root, got, test.wantErr)
+			t.Logf("flag -u=%q", test.update)
+			t.Log("in", strings.Replace(test.tab, "\t", "", -1))
+		}
+		got := names(deps)
 		want := strings.Fields(test.want)
 		if len(want) == 0 {
 			want = nil
@@ -124,6 +145,15 @@ func names(ps []*Package) (a []string) {
 		a = append(a, p.ImportPath)
 	}
 	return a
+}
+
+func anyErr(ps []*Package) bool {
+	for _, p := range ps {
+		if p.Error != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // setup sets up a test directory using the filesystem table
