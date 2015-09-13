@@ -202,9 +202,7 @@ func loadPackage(arg string, stk *importStack) *Package {
 // we return the same pointer each time.
 var packageCache = map[string]*Package{}
 
-// loadImport scans the directory named by path, which must be an import path,
-// but possibly a local import path (an absolute file system path or one beginning
-// with ./ or ../).  A local relative path is interpreted relative to srcDir.
+// loadImport scans the directory named by path, which must be a non-local import path.
 // It returns a *Package describing the package found in that directory.
 func loadImport(path, srcDir string, parent *Package, stk *importStack, importPos []token.Position) *Package {
 	stk.push(path)
