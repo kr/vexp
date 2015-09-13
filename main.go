@@ -216,18 +216,11 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 	// Otherwise it is the usual import path.
 	// For vendored imports, it is the expanded form.
 	importPath := path
-	origPath := path
 	var vendorSearch []string
 	path, vendorSearch = vendoredImportPath(parent, path)
 	importPath = path
 
 	if p := packageCache[importPath]; p != nil {
-		if perr := disallowInternal(srcDir, p, stk); perr != p {
-			return perr
-		}
-		if perr := disallowVendor(srcDir, origPath, p, stk); perr != p {
-			return perr
-		}
 		return reusePackage(p, stk)
 	}
 
@@ -280,14 +273,6 @@ func loadImport(path, srcDir string, parent *Package, stk *importStack, importPo
 		pos.Filename = shortPath(pos.Filename)
 		p.Error.Pos = pos.String()
 	}
-
-	if perr := disallowInternal(srcDir, p, stk); perr != p {
-		return perr
-	}
-	if perr := disallowVendor(srcDir, origPath, p, stk); perr != p {
-		return perr
-	}
-
 	return p
 }
 
@@ -572,161 +557,6 @@ func matchPackagesInFS(pattern string) []string {
 		return nil
 	})
 	return pkgs
-}
-
-// disallowInternal checks that srcDir is allowed to import p.
-// If the import is allowed, disallowInternal returns the original package p.
-// If not, it returns a new package containing just an appropriate error.
-func disallowInternal(srcDir string, p *Package, stk *importStack) *Package {
-	// golang.org/s/go14internal:
-	// An import of a path containing the element “internal”
-	// is disallowed if the importing code is outside the tree
-	// rooted at the parent of the “internal” directory.
-
-	// There was an error loading the package; stop here.
-	if p.Error != nil {
-		return p
-	}
-
-	// The stack includes p.ImportPath.
-	// If that's the only thing on the stack, we started
-	// with a name given on the command line, not an
-	// import. Anything listed on the command line is fine.
-	if len(*stk) == 1 {
-		return p
-	}
-
-	// Check for "internal" element: four cases depending on begin of string and/or end of string.
-	i, ok := findInternal(p.ImportPath)
-	if !ok {
-		return p
-	}
-
-	// Internal is present.
-	// Map import path back to directory corresponding to parent of internal.
-	if i > 0 {
-		i-- // rewind over slash in ".../internal"
-	}
-	parent := p.Dir[:i+len(p.Dir)-len(p.ImportPath)]
-	if hasPathPrefix(filepath.ToSlash(srcDir), filepath.ToSlash(parent)) {
-		return p
-	}
-
-	// Internal is present, and srcDir is outside parent's tree. Not allowed.
-	perr := *p
-	perr.Error = &PackageError{
-		ImportStack: stk.copy(),
-		Err:         "use of internal package not allowed",
-	}
-	return &perr
-}
-
-// findInternal looks for the final "internal" path element in the given import path.
-// If there isn't one, findInternal returns ok=false.
-// Otherwise, findInternal returns ok=true and the index of the "internal".
-func findInternal(path string) (index int, ok bool) {
-	// Four cases, depending on internal at start/end of string or not.
-	// The order matters: we must return the index of the final element,
-	// because the final one produces the most restrictive requirement
-	// on the importer.
-	switch {
-	case strings.HasSuffix(path, "/internal"):
-		return len(path) - len("internal"), true
-	case strings.Contains(path, "/internal/"):
-		return strings.LastIndex(path, "/internal/") + 1, true
-	case path == "internal", strings.HasPrefix(path, "internal/"):
-		return 0, true
-	}
-	return 0, false
-}
-
-// disallowVendor checks that srcDir is allowed to import p as path.
-// If the import is allowed, disallowVendor returns the original package p.
-// If not, it returns a new package containing just an appropriate error.
-func disallowVendor(srcDir, path string, p *Package, stk *importStack) *Package {
-	// The stack includes p.ImportPath.
-	// If that's the only thing on the stack, we started
-	// with a name given on the command line, not an
-	// import. Anything listed on the command line is fine.
-	if len(*stk) == 1 {
-		return p
-	}
-
-	if perr := disallowVendorVisibility(srcDir, p, stk); perr != p {
-		return perr
-	}
-
-	// Paths like x/vendor/y must be imported as y, never as x/vendor/y.
-	if i, ok := findVendor(path); ok {
-		perr := *p
-		perr.Error = &PackageError{
-			ImportStack: stk.copy(),
-			Err:         "must be imported as " + path[i+len("vendor/"):],
-		}
-		return &perr
-	}
-
-	return p
-}
-
-// disallowVendorVisibility checks that srcDir is allowed to import p.
-// The rules are the same as for /internal/ except that a path ending in /vendor
-// is not subject to the rules, only subdirectories of vendor.
-// This allows people to have packages and commands named vendor,
-// for maximal compatibility with existing source trees.
-func disallowVendorVisibility(srcDir string, p *Package, stk *importStack) *Package {
-	// The stack includes p.ImportPath.
-	// If that's the only thing on the stack, we started
-	// with a name given on the command line, not an
-	// import. Anything listed on the command line is fine.
-	if len(*stk) == 1 {
-		return p
-	}
-
-	// Check for "vendor" element.
-	i, ok := findVendor(p.ImportPath)
-	if !ok {
-		return p
-	}
-
-	// Vendor is present.
-	// Map import path back to directory corresponding to parent of vendor.
-	if i > 0 {
-		i-- // rewind over slash in ".../vendor"
-	}
-	parent := p.Dir[:i+len(p.Dir)-len(p.ImportPath)]
-	if hasPathPrefix(filepath.ToSlash(srcDir), filepath.ToSlash(parent)) {
-		return p
-	}
-
-	// Vendor is present, and srcDir is outside parent's tree. Not allowed.
-	perr := *p
-	perr.Error = &PackageError{
-		ImportStack: stk.copy(),
-		Err:         "use of vendored package not allowed",
-	}
-	return &perr
-}
-
-// findVendor looks for the last non-terminating "vendor" path element in the given import path.
-// If there isn't one, findVendor returns ok=false.
-// Otherwise, findInternal returns ok=true and the index of the "vendor".
-//
-// Note that terminating "vendor" elements don't count: "x/vendor" is its own package,
-// not the vendored copy of an import "" (the empty import path).
-// This will allow people to have packages or commands named vendor.
-// This may help reduce breakage, or it may just be confusing. We'll see.
-func findVendor(path string) (index int, ok bool) {
-	// Two cases, depending on internal at start of string or not.
-	// The order matters: we must return the index of the final element,
-	// because the final one is where the effective import path starts.
-	switch {
-	case strings.Contains(path, "/vendor/"):
-		return strings.LastIndex(path, "/vendor/") + 1, true
-	case strings.HasPrefix(path, "vendor/"):
-		return 0, true
-	}
-	return 0, false
 }
 
 // reusePackage reuses package p to satisfy the import at the top
